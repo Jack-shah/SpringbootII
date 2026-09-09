@@ -1,13 +1,26 @@
-# You can change this base image to anything else
-# But make sure to use the correct version of Java
-FROM adoptopenjdk/openjdk11:alpine-jre
+# --- Stage 1: Extract layers (Requires a shell/JDK) ---
+FROM eclipse-temurin:21-jdk-alpine AS builder
+WORKDIR /application
+ARG JAR_FILE=target/spring-boot-web.jar
+COPY ${JAR_FILE} application.jar
+#this command list all the files needed in runner stage(final stage)
+RUN java -Djarmode=layertools -jar application.jar extract
 
-# Simply the artifact path
-ARG artifact=target/spring-boot-web.jar
+# --- Stage 2: Final minimal production image (Distroless) ---
+# gcr.io/distroless/java21-debian12 provides the Java 21 runtime without a shell
+FROM gcr.io/distroless/java21-debian12
+WORKDIR /application
 
-WORKDIR /opt/app
+# Copy the extracted layers from the builder stage(list of files needed in runner stage)
+COPY --from=builder /application/dependencies/ ./
+COPY --from=builder /application/spring-boot-loader/ ./
+COPY --from=builder /application/snapshot-dependencies/ ./
+COPY --from=builder /application/application/ ./
 
-COPY ${artifact} app.jar
+# Distroless images automatically configure and run as a non-root 'nonroot' user (UID 65532)
+USER nonroot:nonroot
 
-# This should not be changed
-ENTRYPOINT ["java","-jar","app.jar"]
+EXPOSE 8080
+
+# Execute using the JarLauncher
+ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]
