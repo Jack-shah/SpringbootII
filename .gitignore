@@ -1,0 +1,6 @@
+# Ignore Maven build outputs
+target/
+
+# Ignore local Maven dependency cache
+.m2/
+
